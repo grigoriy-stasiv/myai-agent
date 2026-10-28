@@ -1,13 +1,13 @@
 const OpenAI = require("openai");
 const Chat = require("../models/Chat");
 const mongoose = require("mongoose");
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
 
 const sendMessage = async (req, res) => {
   try {
-    const { message, chatId } = req.body;
+    const { message, chatId } = req.body || {};
 
     if (
       typeof message !== "string" ||
@@ -46,30 +46,19 @@ const sendMessage = async (req, res) => {
     }
 
     const conversationHistory = chat.messages
-      .map((item) => ({
-        role: item.role,
-        content: item.content,
-      }))
-      .slice(-20);
-    
-    chat.messages.push({
-      role: "user",
-      content: message.trim(),
-    });
-
-    if (chat.title === "Нова розмова" && chat.messages.length === 1) {
-      chat.title = message.trim().slice(0, 40);
-    }
-
-    await chat.save();
+      .slice(-20)
+      .map((item) => ({ role: item.role, content: item.content }));
 
     let aiReply;
 
     if (process.env.MOCK_AI === "true") {
       aiReply = `Тестова відповідь MyAI Agent: я отримав твоє повідомлення — "${message.trim()}"`;
     } else {
+      if (!openai) {
+        return res.status(503).json({ message: "AI-сервіс не налаштований. Додай OPENAI_API_KEY." });
+      }
       const response = await openai.responses.create({
-        model: "gpt-6-astra",
+        model: process.env.OPENAI_MODEL || "gpt-6-astra",
         instructions:
           "Ти MyAI Agent — універсальний, дружній та корисний AI-помічник. Відповідай українською мовою, якщо користувач не просить іншу мову.",
         input: [
@@ -81,7 +70,15 @@ const sendMessage = async (req, res) => {
         ],
       });
 
-      aiReply = response.output_text;
+      aiReply = response.output_text?.trim();
+      if (!aiReply) throw new Error("AI service returned an empty response");
+    }
+    chat.messages.push({
+      role: "user",
+      content: message.trim(),
+    });
+    if (chat.title === "Нова розмова" && chat.messages.length === 1) {
+      chat.title = message.trim().slice(0, 40);
     }
     chat.messages.push({
       role: "assistant",

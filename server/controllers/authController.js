@@ -4,12 +4,16 @@ const jwt = require("jsonwebtoken");
 
 const register = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password } = req.body || {};
 
     if (!name || !email || !password) {
       return res.status(400).json({
         message: "Заповни всі обов'язкові поля",
       });
+    }
+
+    if (typeof name !== "string" || typeof email !== "string" || typeof password !== "string") {
+      return res.status(400).json({ message: "Перевір введені дані" });
     }
 
     if (name.trim().length < 2 || name.trim().length > 50) {
@@ -82,12 +86,10 @@ const register = async (req, res) => {
 
 const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
 
-    if (!email || !password) {
-      return res.status(400).json({
-        message: "Введи email та пароль",
-      });
+    if (typeof email !== "string" || typeof password !== "string" || !email || !password) {
+      return res.status(400).json({ message: "Введи коректні email та пароль" });
     }
 
     const normalizedEmail = email.trim().toLowerCase();

@@ -1,4 +1,7 @@
 const Chat = require("../models/Chat");
+const mongoose = require("mongoose");
+
+const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
 
 const getChats = async (req, res) => {
   try {
@@ -18,7 +21,10 @@ const getChats = async (req, res) => {
 
 const createChat = async (req, res) => {
   try {
-    const { title } = req.body;
+    const { title } = req.body || {};
+    if (title !== undefined && (typeof title !== "string" || title.trim().length > 80)) {
+      return res.status(400).json({ message: "Назва має містити до 80 символів" });
+    }
 
     const chat = await Chat.create({
       title: title?.trim() || "Нова розмова",
@@ -38,6 +44,7 @@ const createChat = async (req, res) => {
 
 const getChatById = async (req, res) => {
   try {
+    if (!isValidId(req.params.id)) return res.status(400).json({ message: "Некоректний ID чату" });
     const chat = await Chat.findOne({
       _id: req.params.id,
       user: req.user._id,
@@ -61,7 +68,8 @@ const getChatById = async (req, res) => {
 
 const addMessage = async (req, res) => {
   try {
-    const { content } = req.body;
+    const { content } = req.body || {};
+    if (!isValidId(req.params.id)) return res.status(400).json({ message: "Некоректний ID чату" });
 
     if (
       typeof content !== "string" ||
@@ -107,7 +115,7 @@ const addMessage = async (req, res) => {
 
 const addAssistantMessage = async (req, res) => {
   try {
-    const { content } = req.body;
+    const { content } = req.body || {};
 
     if (
       typeof content !== "string" ||
@@ -147,8 +155,29 @@ const addAssistantMessage = async (req, res) => {
   }
 };
 
+const renameChat = async (req, res) => {
+  try {
+    const { title } = req.body || {};
+    if (!isValidId(req.params.id)) return res.status(400).json({ message: "Некоректний ID чату" });
+    if (typeof title !== "string" || !title.trim() || title.trim().length > 80) {
+      return res.status(400).json({ message: "Назва має містити від 1 до 80 символів" });
+    }
+    const chat = await Chat.findOneAndUpdate(
+      { _id: req.params.id, user: req.user._id },
+      { $set: { title: title.trim() } },
+      { new: true, runValidators: true },
+    );
+    if (!chat) return res.status(404).json({ message: "Чат не знайдено" });
+    res.json(chat);
+  } catch (error) {
+    console.error("Rename chat error:", error.message);
+    res.status(500).json({ message: "Не вдалося перейменувати чат" });
+  }
+};
+
 const deleteChat = async (req, res) => {
   try {
+    if (!isValidId(req.params.id)) return res.status(400).json({ message: "Некоректний ID чату" });
     const chat = await Chat.findOneAndDelete({
       _id: req.params.id,
       user: req.user._id,
@@ -178,5 +207,6 @@ module.exports = {
   getChatById,
   addMessage,
   addAssistantMessage,
+  renameChat,
   deleteChat,
 };

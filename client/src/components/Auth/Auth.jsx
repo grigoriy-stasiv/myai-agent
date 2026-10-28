@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { apiRequest } from "../../api";
 
 import "./Auth.css";
 
@@ -17,27 +18,10 @@ function Auth({ onLogin }) {
 
     try {
       const endpoint = isRegister ? "register" : "login";
-
-      const response = await fetch(
-        `http://localhost:5000/api/auth/${endpoint}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            ...(isRegister && { name }),
-            email,
-            password,
-          }),
-        },
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Помилка авторизації");
-      }
+      const data = await apiRequest(`/auth/${endpoint}`, {
+        method: "POST",
+        body: JSON.stringify({ ...(isRegister && { name }), email, password }),
+      });
 
       localStorage.setItem("myai-token", data.token);
       onLogin(data.user);

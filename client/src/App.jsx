@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import Auth from "./components/Auth/Auth";
+import { apiRequest } from "./api";
 import "./App.css";
+
+const EMPTY_MESSAGES = [];
 
 function App() {
   const [message, setMessage] = useState("");
@@ -24,7 +27,7 @@ function App() {
     }
   }, [activeChatId]);
 
-  const messages = activeChat?.messages || [];
+  const messages = activeChat ? activeChat.messages : EMPTY_MESSAGES;
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({
@@ -42,19 +45,9 @@ function App() {
       }
 
       try {
-        const response = await fetch("http://localhost:5000/api/auth/me", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error("Сесія недійсна");
-        }
-
-        const data = await response.json();
+        const data = await apiRequest("/auth/me", { token });
         setCurrentUser(data.user);
-      } catch (error) {
+      } catch {
         localStorage.removeItem("myai-token");
         setCurrentUser(null);
       } finally {
@@ -66,23 +59,25 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const handleUnauthorized = () => {
+      setCurrentUser(null);
+      setChats([]);
+      setActiveChatId(null);
+    };
+    window.addEventListener("myai:unauthorized", handleUnauthorized);
+    return () => window.removeEventListener("myai:unauthorized", handleUnauthorized);
+  }, []);
+
+  useEffect(() => {
     if (!currentUser) return;
 
     const loadChats = async () => {
       try {
         const token = localStorage.getItem("myai-token");
 
-        const response = await fetch("http://localhost:5000/api/chats", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+        const response = await apiRequest("/chats", { token });
 
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.message || "Не вдалося завантажити чати");
-        }
+        const data = response;
 
         const formattedChats = data.map((chat) => ({
           ...chat,
@@ -117,22 +112,11 @@ function App() {
       if (!chatId) {
         const token = localStorage.getItem("myai-token");
 
-        const response = await fetch("http://localhost:5000/api/chats", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            title: userMessage.slice(0, 30),
-          }),
+        const response = await apiRequest("/chats", {
+          method: "POST", token, body: JSON.stringify({ title: userMessage.slice(0, 30) }),
         });
 
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.message || "Не вдалося створити чат");
-        }
+        const data = response;
 
         chatId = data._id;
 
@@ -168,23 +152,11 @@ function App() {
     try {
       const token = localStorage.getItem("myai-token");
 
-      const response = await fetch("http://localhost:5000/api/ai/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          message: userMessage,
-          chatId: chatId,
-        }),
+      const response = await apiRequest("/ai/chat", {
+        method: "POST", token, body: JSON.stringify({ message: userMessage, chatId }),
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Помилка сервера");
-      }
+      const data = response;
 
       setChats((prev) =>
         prev.map((chat) =>
@@ -214,7 +186,7 @@ function App() {
                   {
                     id: Date.now() + 1,
                     text: "Не вдалося отримати відповідь: " + error.message,
-                    sender: "ai",
+                    sender: "error",
                   },
                 ],
               }
@@ -280,13 +252,18 @@ function App() {
                     );
 
                     if (newTitle && newTitle.trim()) {
-                      setChats((prev) =>
-                        prev.map((item) =>
-                          item._id === chat._id
-                            ? { ...item, title: newTitle.trim() }
-                            : item,
-                        ),
-                      );
+                      const token = localStorage.getItem("myai-token");
+                      apiRequest(`/chats/${chat._id}`, {
+                        method: "PATCH",
+                        token,
+                        body: JSON.stringify({ title: newTitle.trim() }),
+                      })
+                        .then((updatedChat) => {
+                          setChats((prev) => prev.map((item) =>
+                            item._id === chat._id ? { ...item, title: updatedChat.title } : item,
+                          ));
+                        })
+                        .catch((error) => window.alert(error.message));
                     }
                   }}
                 >
@@ -306,23 +283,7 @@ function App() {
                     try {
                       const token = localStorage.getItem("myai-token");
 
-                      const response = await fetch(
-                        `http://localhost:5000/api/chats/${chat._id}`,
-                        {
-                          method: "DELETE",
-                          headers: {
-                            Authorization: `Bearer ${token}`,
-                          },
-                        },
-                      );
-
-                      const data = await response.json();
-
-                      if (!response.ok) {
-                        throw new Error(
-                          data.message || "Не вдалося видалити чат",
-                        );
-                      }
+                      await apiRequest(`/chats/${chat._id}`, { method: "DELETE", token });
 
                       setChats((prev) =>
                         prev.filter((item) => item._id !== chat._id),
@@ -403,6 +364,7 @@ function App() {
                 }
               }}
               rows={1}
+              maxLength={4000}
             />
 
             <button
